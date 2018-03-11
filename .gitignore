@@ -7,3 +7,6 @@ training/tf/checkpoint
 training/tf/venv
 leelaz-model*
 *.orig
+build
+leelaz_opencl_tuning
+.vscode

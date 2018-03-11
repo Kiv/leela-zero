@@ -27,9 +27,6 @@
 #include <vector>
 
 #include "UCTNode.h"
-#include "FastBoard.h"
-#include "FastState.h"
-#include "KoState.h"
 #include "Random.h"
 #include "UCTNode.h"
 
@@ -46,21 +43,7 @@ UCTNode* UCTNode::get_first_child() const {
     return m_children.front().get();
 }
 
-void UCTNode::kill_superkos(const KoState& state) {
-    for (auto& child : m_children) {
-        auto move = child->get_move();
-        if (move != FastBoard::PASS) {
-            KoState mystate = state;
-            mystate.play_move(move);
-
-            if (mystate.superko()) {
-                // Don't delete nodes for now, just mark them invalid.
-                child->invalidate();
-            }
-        }
-    }
-
-    // Now do the actual deletion.
+void UCTNode::erase_invalidated() {
     m_children.erase(
         std::remove_if(begin(m_children), end(m_children),
                        [](const auto &child) { return !child->valid(); }),
@@ -125,20 +108,6 @@ void UCTNode::randomize_first_proportionally() {
 
     // Now swap the child at index with the first child
     std::iter_swap(begin(m_children), begin(m_children) + index);
-}
-
-UCTNode* UCTNode::get_nopass_child(FastState& state) const {
-    for (const auto& child : m_children) {
-        /* If we prevent the engine from passing, we must bail out when
-           we only have unreasonable moves to pick, like filling eyes.
-           Note that this knowledge isn't required by the engine,
-           we require it because we're overruling its moves. */
-        if (child->m_move != FastBoard::PASS
-            && !state.board.is_eye(state.get_to_move(), child->m_move)) {
-            return child.get();
-        }
-    }
-    return nullptr;
 }
 
 // Used to find new root in UCTSearch

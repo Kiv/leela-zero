@@ -25,8 +25,7 @@
 #include <memory>
 #include <vector>
 
-#include "GameState.h"
-#include "Network.h"
+#include "NetworkResult.h"
 #include "SMP.h"
 
 class UCTNode {
@@ -43,9 +42,7 @@ public:
     UCTNode() = delete;
     ~UCTNode() = default;
 
-    bool create_children(std::atomic<int>& nodecount,
-                         GameState& state, float& eval);
-
+    std::vector<node_ptr_t>& get_children();
     const std::vector<node_ptr_t>& get_children() const;
     void sort_children(int color);
     UCTNode& get_best_root_child(int color);
@@ -65,20 +62,22 @@ public:
     void set_score(float score);
     float get_eval(int tomove) const;
     float get_net_eval(int tomove) const;
+    void set_net_eval(float eval);
     double get_blackevals() const;
     void accumulate_eval(float eval);
     void virtual_loss(void);
     void virtual_loss_undo(void);
     void update(float eval);
+    bool set_expanding();
 
     // Defined in UCTNodeRoot.cpp, only to be called on m_root in UCTSearch
-    void kill_superkos(const KoState& state);
+    void erase_invalidated();
     void dirichlet_noise(float epsilon, float alpha);
     void randomize_first_proportionally();
 
     UCTNode* get_first_child() const;
-    UCTNode* get_nopass_child(FastState& state) const;
     node_ptr_t find_child(const int move);
+    void link_nodelist(std::vector<scored_node>& nodelist);
 
 private:
     enum Status : char {
@@ -86,9 +85,6 @@ private:
         PRUNED,
         ACTIVE
     };
-    void link_nodelist(std::atomic<int>& nodecount,
-                       std::vector<Network::scored_node>& nodelist);
-
     // Note : This class is very size-sensitive as we are going to create
     // tens of millions of instances of these.  Please put extra caution
     // if you want to add/remove/reorder any variables here.

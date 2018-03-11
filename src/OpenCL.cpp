@@ -40,6 +40,9 @@
 #include "Utils.h"
 #include "Tuner.h"
 
+static constexpr auto WINOGRAD_P = (BOARD_SIZE + 1) * (BOARD_SIZE + 1) / 4;
+static constexpr auto WINOGRAD_TILE = 4 * 4;
+
 using namespace Utils;
 
 static std::string cl_args =

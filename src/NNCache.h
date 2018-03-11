@@ -23,15 +23,18 @@
 
 #include <deque>
 #include <mutex>
+#include <memory>
+#include <utility>
+#include <vector>
 #include <unordered_map>
 
-#include "Network.h"
+#include "NetworkResult.h"
 
 class NNCache {
 public:
     // return the global NNCache
     static NNCache& get_NNCache(void);
-
+    
     // Set a reasonable size gives max number of playouts
     void set_size_from_playouts(int max_playouts);
 
@@ -39,11 +42,11 @@ public:
     void resize(int size);
 
     // Try and find an existing entry.
-    bool lookup(std::uint64_t hash, Network::Netresult & result);
+    bool lookup(std::uint64_t hash, Netresult & result);
 
     // Insert a new entry.
     void insert(std::uint64_t hash,
-                const Network::Netresult& result);
+                const Netresult& result);
 
     // Return the hit rate ratio.
     std::pair<int, int> hit_rate() const {
@@ -65,9 +68,9 @@ private:
     int m_inserts{0};
 
     struct Entry {
-        Entry( const Network::Netresult& r)
+        Entry( const Netresult& r)
             : result(r) {}
-        Network::Netresult result;  // ~ 3KB
+        Netresult result;  // ~ 3KB
     };
 
     // Map from hash to {features, result}

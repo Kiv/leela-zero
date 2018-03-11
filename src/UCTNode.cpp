@@ -31,11 +31,8 @@
 #include <vector>
 
 #include "UCTNode.h"
-#include "FastBoard.h"
-#include "FastState.h"
 #include "GTP.h"
-#include "GameState.h"
-#include "Network.h"
+#include "NetworkResult.h"
 #include "Utils.h"
 
 using namespace Utils;
@@ -51,19 +48,13 @@ SMP::Mutex& UCTNode::get_mutex() {
     return m_nodemutex;
 }
 
-bool UCTNode::create_children(std::atomic<int>& nodecount,
-                              GameState& state,
-                              float& eval) {
+bool UCTNode::set_expanding() {
     // check whether somebody beat us to it (atomic)
     if (has_children()) {
         return false;
     }
     // acquire the lock
     LOCK(get_mutex(), lock);
-    // no successors in final state
-    if (state.get_passes() >= 2) {
-        return false;
-    }
     // check whether somebody beat us to it (after taking the lock)
     if (has_children()) {
         return false;
@@ -75,49 +66,10 @@ bool UCTNode::create_children(std::atomic<int>& nodecount,
     // We'll be the one queueing this node for expansion, stop others
     m_is_expanding = true;
     lock.unlock();
-
-    const auto raw_netlist = Network::get_scored_moves(
-        &state, Network::Ensemble::RANDOM_ROTATION);
-
-    // DCNN returns winrate as side to move
-    m_net_eval = raw_netlist.second;
-    const auto to_move = state.board.get_to_move();
-    // our search functions evaluate from black's point of view
-    if (state.board.white_to_move()) {
-        m_net_eval = 1.0f - m_net_eval;
-    }
-    eval = m_net_eval;
-
-    std::vector<Network::scored_node> nodelist;
-
-    auto legal_sum = 0.0f;
-    for (const auto& node : raw_netlist.first) {
-        auto vertex = node.second;
-        if (state.is_move_legal(to_move, vertex)) {
-            nodelist.emplace_back(node);
-            legal_sum += node.first;
-        }
-    }
-
-    if (legal_sum > std::numeric_limits<float>::min()) {
-        // re-normalize after removing illegal moves.
-        for (auto& node : nodelist) {
-            node.first /= legal_sum;
-        }
-    } else {
-        // This can happen with new randomized nets.
-        auto uniform_prob = 1.0f / nodelist.size();
-        for (auto& node : nodelist) {
-            node.first = uniform_prob;
-        }
-    }
-
-    link_nodelist(nodecount, nodelist);
     return true;
 }
 
-void UCTNode::link_nodelist(std::atomic<int>& nodecount,
-                            std::vector<Network::scored_node>& nodelist) {
+void UCTNode::link_nodelist(std::vector<scored_node>& nodelist) {
     if (nodelist.empty()) {
         return;
     }
@@ -133,15 +85,16 @@ void UCTNode::link_nodelist(std::atomic<int>& nodecount,
             std::make_unique<UCTNode>(node.second, node.first)
         );
     }
-
-    nodecount += m_children.size();
     m_has_children = true;
+}
+
+std::vector<UCTNode::node_ptr_t>& UCTNode::get_children() {
+    return m_children;
 }
 
 const std::vector<UCTNode::node_ptr_t>& UCTNode::get_children() const {
     return m_children;
 }
-
 
 int UCTNode::get_move() const {
     return m_move;
@@ -184,21 +137,25 @@ float UCTNode::get_eval(int tomove) const {
     auto visits = get_visits() + virtual_loss;
     assert(visits > 0);
     auto blackeval = get_blackevals();
-    if (tomove == FastBoard::WHITE) {
+    if (tomove) {
         blackeval += static_cast<double>(virtual_loss);
     }
     auto score = static_cast<float>(blackeval / (double)visits);
-    if (tomove == FastBoard::WHITE) {
+    if (tomove) {
         score = 1.0f - score;
     }
     return score;
 }
 
 float UCTNode::get_net_eval(int tomove) const {
-    if (tomove == FastBoard::WHITE) {
+    if (tomove) {
         return 1.0f - m_net_eval;
     }
     return m_net_eval;
+}
+
+void UCTNode::set_net_eval(float eval) {
+    m_net_eval = eval;
 }
 
 double UCTNode::get_blackevals() const {

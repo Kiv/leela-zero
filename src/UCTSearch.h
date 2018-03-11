@@ -24,8 +24,6 @@
 #include <string>
 #include <tuple>
 
-#include "FastBoard.h"
-#include "FastState.h"
 #include "GameState.h"
 #include "UCTNode.h"
 
@@ -91,6 +89,7 @@ public:
     bool stop_thinking(int elapsed_centis = 0, int time_for_move = 0) const;
     void increment_playouts();
     SearchResult play_simulation(GameState& currstate, UCTNode* const node);
+    bool create_children(UCTNode *node, GameState& state, float &eval);
 
 private:
     void dump_stats(FastState& state, UCTNode& parent);
@@ -101,6 +100,8 @@ private:
     int get_best_move(passflag_t passflag);
     void update_root();
     bool advance_to_new_rootstate();
+    void kill_superkos(UCTNode *node);
+    UCTNode* get_nopass_child(const UCTNode *node, FastState& state) const;
 
     GameState & m_rootstate;
     std::unique_ptr<GameState> m_last_rootstate;

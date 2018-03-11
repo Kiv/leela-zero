@@ -121,6 +121,55 @@ void UCTSearch::update_root() {
 #endif
 }
 
+
+bool UCTSearch::create_children(UCTNode *node, GameState& state, float &eval) {
+    if(!node->set_expanding()) {
+        return false;
+    }
+    // no successors in final state
+    if (state.get_passes() >= 2) {
+        return false;
+    }
+
+    auto raw_netlist = Network::get_scored_moves(
+        &state, Network::Ensemble::RANDOM_ROTATION);
+
+    // DCNN returns winrate as side to move
+    const auto to_move = state.board.get_to_move();
+    // our search functions evaluate from black's point of view
+    if (state.board.white_to_move()) {
+        raw_netlist.second = 1.0f - raw_netlist.second;
+    }
+    eval = raw_netlist.second;
+    node->set_net_eval(eval);
+
+    std::vector<scored_node> nodelist;
+    auto legal_sum = 0.0f;
+    for (const auto& node : raw_netlist.first) {
+        auto vertex = node.second;
+        if (state.is_move_legal(to_move, vertex)) {
+            nodelist.emplace_back(node);
+            legal_sum += node.first;
+        }
+    }
+
+    if (legal_sum > std::numeric_limits<float>::min()) {
+        // re-normalize after removing illegal moves.
+        for (auto& node : nodelist) {
+            node.first /= legal_sum;
+        }
+    } else {
+        // This can happen with new randomized nets.
+        auto uniform_prob = 1.0f / nodelist.size();
+        for (auto& node : nodelist) {
+            node.first = uniform_prob;
+        }
+    }
+    node->link_nodelist(nodelist);
+    m_nodes += node->get_children().size();
+    return true;
+}
+
 SearchResult UCTSearch::play_simulation(GameState & currstate,
                                         UCTNode* const node) {
     const auto color = currstate.get_to_move();
@@ -134,7 +183,7 @@ SearchResult UCTSearch::play_simulation(GameState & currstate,
             result = SearchResult::from_score(score);
         } else if (m_nodes < MAX_TREE_SIZE) {
             float eval;
-            auto success = node->create_children(m_nodes, currstate, eval);
+            auto success = create_children(node, currstate, eval);
             if (success) {
                 result = SearchResult::from_eval(eval);
             }
@@ -291,6 +340,20 @@ bool UCTSearch::should_resign(passflag_t passflag, float bestscore) {
     return true;
 }
 
+UCTNode* UCTSearch::get_nopass_child(const UCTNode *node, FastState& state) const {
+    for (const auto& child : node->get_children()) {
+        /* If we prevent the engine from passing, we must bail out when
+           we only have unreasonable moves to pick, like filling eyes.
+           Note that this knowledge isn't required by the engine,
+           we require it because we're overruling its moves. */
+        if (child->get_move() != FastBoard::PASS
+            && !state.board.is_eye(state.get_to_move(), child->get_move())) {
+            return child.get();
+        }
+    }
+    return nullptr;
+}
+
 int UCTSearch::get_best_move(passflag_t passflag) {
     int color = m_rootstate.board.get_to_move();
 
@@ -314,7 +377,7 @@ int UCTSearch::get_best_move(passflag_t passflag) {
     if (passflag & UCTSearch::NOPASS) {
         // were we going to pass?
         if (bestmove == FastBoard::PASS) {
-            UCTNode * nopass = m_root->get_nopass_child(m_rootstate);
+            UCTNode * nopass = get_nopass_child(m_root.get(), m_rootstate);
 
             if (nopass != nullptr) {
                 myprintf("Preferring not to pass.\n");
@@ -355,7 +418,7 @@ int UCTSearch::get_best_move(passflag_t passflag) {
                 (score < 0.0f && color == FastBoard::BLACK)) {
                 myprintf("Passing loses :-(\n");
                 // Find a valid non-pass move.
-                UCTNode * nopass = m_root->get_nopass_child(m_rootstate);
+                UCTNode * nopass = get_nopass_child(m_root.get(), m_rootstate);
                 if (nopass != nullptr) {
                     myprintf("Avoiding pass because it loses.\n");
                     bestmove = nopass->get_move();
@@ -498,6 +561,22 @@ void UCTSearch::increment_playouts() {
     m_playouts++;
 }
 
+void UCTSearch::kill_superkos(UCTNode *node) {
+    for (auto& child : node->get_children()) {
+        auto move = child->get_move();
+        if (move != FastBoard::PASS) {
+            KoState mystate = m_rootstate;
+            mystate.play_move(move);
+
+            if (mystate.superko()) {
+                // Don't delete nodes for now, just mark them invalid.
+                child->invalidate();
+            }
+        }
+    }
+    node->erase_invalidated();
+}
+
 int UCTSearch::think(int color, passflag_t passflag) {
     // Start counting time for us
     m_rootstate.start_clock(color);
@@ -518,12 +597,12 @@ int UCTSearch::think(int color, passflag_t passflag) {
     // play something legal and decent even in time trouble)
     float root_eval;
     if (!m_root->has_children()) {
-        m_root->create_children(m_nodes, m_rootstate, root_eval);
+        create_children(m_root.get(), m_rootstate, root_eval);
         m_root->update(root_eval);
     } else {
         root_eval = m_root->get_eval(color);
     }
-    m_root->kill_superkos(m_rootstate);
+    kill_superkos(m_root.get());
     if (cfg_noise) {
         // Adjusting the Dirichlet noise's alpha constant to the board size
         auto alpha = 0.03f * 361.0f / BOARD_SQUARES;

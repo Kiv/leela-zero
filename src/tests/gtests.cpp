@@ -29,6 +29,7 @@
 
 #include "GTP.h"
 #include "GameState.h"
+#include "Network.h"
 #include "NNCache.h"
 #include "Random.h"
 #include "ThreadPool.h"

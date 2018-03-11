@@ -29,7 +29,7 @@ NNCache& NNCache::get_NNCache(void) {
     return cache;
 }
 
-bool NNCache::lookup(std::uint64_t hash, Network::Netresult & result) {
+bool NNCache::lookup(std::uint64_t hash, Netresult & result) {
     std::lock_guard<std::mutex> lock(m_mutex);
     ++m_lookups;
 
@@ -47,7 +47,7 @@ bool NNCache::lookup(std::uint64_t hash, Network::Netresult & result) {
 }
 
 void NNCache::insert(std::uint64_t hash,
-                     const Network::Netresult& result) {
+                     const Netresult& result) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (m_cache.find(hash) != m_cache.end()) {
